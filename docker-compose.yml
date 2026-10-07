@@ -83,10 +83,11 @@ services:
       # 8. LƯU DỮ LIỆU
       # --------------------------------------------------------
       # Thư mục lưu dữ liệu message và metadata, không chỉ log console.
-      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      # Image Kafka đã tạo đường dẫn này và cấp quyền ghi cho appuser.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       # Volume giữ dữ liệu khi container được tạo lại.
-      - kafka-data:/tmp/kraft-combined-logs
+      - kafka-data:/var/lib/kafka/data
 
   # ============================================================
   # OPENSEARCH — lưu và tìm kiếm dữ liệu; API tại localhost:9200
