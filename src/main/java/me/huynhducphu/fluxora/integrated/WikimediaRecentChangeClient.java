@@ -10,8 +10,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 
-import java.util.Objects;
-
 @Component
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class WikimediaRecentChangeClient {
@@ -34,7 +32,7 @@ public class WikimediaRecentChangeClient {
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .retrieve()
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
-                .filter(Objects::nonNull)
+                .filter(event -> event.data() != null)
                 .map(ServerSentEvent::data);
     }
 
