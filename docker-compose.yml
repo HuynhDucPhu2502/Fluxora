@@ -1,0 +1,651 @@
+1. Phạm vi triển khai
+
+Triển khai luồng chọn Debit Note tại màn hình Chứng từ công nợ để tạo Invoice gộp hoặc tạo Invoice riêng cho từng Debit Note.
+
+Chưa triển khai tự tách Invoice theo thuế suất. Nghiệp vụ tạo nhiều Invoice theo nhiều loại thuế sẽ được thiết kế sau.
+
+Trong phạm vi hiện tại, một Debit Note không được chia thành nhiều Invoice.
+
+2. Nguyên tắc chung
+
+Debit Note là chứng từ công nợ, được tạo độc lập và không bắt buộc có Invoice ngay khi tạo.
+
+Invoice được lập từ một hoặc nhiều Debit Note và đồng bộ với MISA.
+
+Debit Note phản ánh khoản phải thu đã được duyệt.
+
+Invoice phản ánh nội dung hóa đơn trên MISA.
+
+Nếu kế toán sửa Invoice trên MISA, FMS đồng bộ dữ liệu Invoice và lưu lịch sử thay đổi.
+
+Không đồng bộ ngược để sửa nội dung, dòng phí hoặc số tiền của Debit Note.
+
+3. Quan hệ Debit Note và Invoice
+
+Một Invoice có thể chứa một hoặc nhiều Debit Note.
+
+Một Debit Note có thể chưa có Invoice hoặc thuộc một Invoice giữ quyền xuất tại một thời điểm.
+
+Một Debit Note không được sử dụng lại để tạo Invoice khác khi đang có Invoice giữ chỗ hoặc đã phát hành.
+
+Hóa đơn điều chỉnh hoặc thay thế được lưu thành Invoice riêng, liên kết với Invoice được sửa.
+
+Giữ đầy đủ lịch sử liên quan đến các Debit Note nguồn.
+
+Quan hệ hiện tại:
+
+Invoice → Một hoặc nhiều Debit Note.
+Debit Note → Không có hoặc có một Invoice giữ quyền xuất.
+
+Quan hệ lịch sử:
+
+Invoice → Có thể có nhiều Invoice điều chỉnh/thay thế liên quan.
+
+Liên kết hiện tại và lịch sử phải được phân biệt để không mất dữ liệu khi thay thế hoặc hủy hóa đơn.
+
+4. Trạng thái Commercial Document
+
+Commercial Document sử dụng một trường status duy nhất cho cả duyệt chứng từ và tiến trình xuất hóa đơn.
+
+Không tạo thêm invoiceStatus.
+
+Các giá trị:
+
+PENDING: Chờ duyệt.
+REJECTED: Bị trả lại.
+APPROVED: Đã duyệt, chưa có Invoice giữ chỗ.
+INVOICING: Đang lập hóa đơn.
+INVOICED: Đã xuất hóa đơn.
+VOIDED: Đã hủy chứng từ.
+
+Luồng chính:
+
+PENDING → APPROVED → INVOICING → INVOICED.
+
+Luồng trả lại:
+
+PENDING → REJECTED → Sửa và gửi lại → PENDING.
+
+Luồng thu hồi/bỏ Invoice nháp:
+
+INVOICING → Thu hồi/bỏ nháp thành công → APPROVED.
+
+INVOICING và INVOICED chỉ áp dụng cho Commercial Document thuộc phạm vi xuất hóa đơn.
+
+APPROVED, INVOICING và INVOICED đều được hiểu là chứng từ đã duyệt.
+
+Các chức năng công nợ, thanh toán, phân bổ và báo cáo phải tính cả ba trạng thái này khi phù hợp.
+
+Chuyển sang INVOICING hoặc INVOICED không làm mất hoặc ghi nhận lại công nợ.
+
+5. Trạng thái thanh toán
+
+Trạng thái thanh toán giữ riêng vì thanh toán có thể diễn ra trước hoặc sau khi xuất hóa đơn.
+
+Các giá trị hiện có:
+
+UNPAID: Chưa thanh toán.
+PARTIALLY\_PAID: Thanh toán một phần.
+PAID: Đã thanh toán.
+NOT\_APPLICABLE: Không áp dụng.
+
+Trạng thái thanh toán được tính từ các khoản phân bổ thanh toán.
+
+Ví dụ:
+
+status = INVOICED.
+paymentStatus = PARTIALLY\_PAID.
+
+6. Tạo và duyệt Debit Note
+
+Người dùng tạo Debit Note từ các khoản phí của Job.
+
+Thông tin gồm Customer, Currency, Billing Company và House Bill nếu có.
+
+Debit Note được đánh số khi tạo và bắt đầu ở PENDING.
+
+Kế toán duyệt thì chuyển sang APPROVED.
+
+Kế toán trả lại thì chuyển sang REJECTED.
+
+Người dùng sửa và gửi lại thì chuyển về PENDING.
+
+Chỉ Debit Note có status = APPROVED, còn hiệu lực và đủ dữ liệu xuất hóa đơn mới được chọn để tạo Invoice.
+
+7. Luồng xuất hóa đơn
+
+Luồng bắt đầu tại màn hình Chứng từ công nợ:
+
+Chứng từ công nợ
+→ Lọc danh sách
+→ Chọn một hoặc nhiều Debit Note
+→ Bấm Xuất hóa đơn
+→ Chọn Xuất gộp hoặc Xuất riêng từng Debit Note
+→ Xem trước
+→ Tạo Invoice nháp
+→ Gửi MISA
+→ Scheduler đồng bộ kết quả.
+
+Các bộ lọc hỗ trợ:
+
+Customer.
+Billing Company.
+Currency.
+Job.
+House Bill.
+Ngày chứng từ.
+Trạng thái.
+
+Job và House Bill là bộ lọc hỗ trợ tìm Debit Note, không phải điều kiện duy nhất quyết định được xuất gộp.
+
+8. Điều kiện chọn Debit Note
+
+Debit Note được chọn phải:
+
+Có status = APPROVED.
+Còn hiệu lực.
+Là chứng từ phải thu thuộc phạm vi xuất hóa đơn.
+Không có Invoice khác đang giữ quyền xuất.
+Có đầy đủ dữ liệu cần thiết để tạo Invoice.
+
+Debit Note ở INVOICING hoặc INVOICED không được chọn để tạo Invoice khác.
+
+Backend phải kiểm tra lại khi tạo Invoice, không chỉ dựa vào frontend.
+
+9. Xuất gộp
+
+Người dùng chọn nhiều Debit Note và chọn Xuất gộp.
+
+Hệ thống tạo một Invoice chứa các dòng phí hợp lệ của tất cả Debit Note đã chọn.
+
+Ví dụ:
+
+DN001 + DN002 + DN003 → INV001.
+
+Các điều kiện:
+
+Cùng Customer.
+Cùng Currency.
+Cùng Billing Company.
+Thông tin người mua xuất hóa đơn tương thích: tên pháp lý, mã số thuế và địa chỉ.
+Ngữ cảnh và cấu hình xuất hóa đơn tương thích.
+Điều kiện thuế phù hợp với khả năng xuất trên một Invoice.
+Tất cả Debit Note đủ điều kiện xuất hóa đơn.
+
+Nếu không thể gom, hiển thị Debit Note không tương thích và lý do.
+
+Không tự chuyển sang xuất riêng hoặc tự chia nhóm khi người dùng chọn Xuất gộp.
+
+Người dùng chọn lại Debit Note hoặc chuyển sang Xuất riêng.
+
+10. Xuất riêng từng Debit Note
+
+Người dùng chọn nhiều Debit Note và chọn Xuất riêng từng Debit Note.
+
+Mỗi Debit Note tạo một Invoice riêng.
+
+Ví dụ:
+
+DN001 → INV001.
+DN002 → INV002.
+DN003 → INV003.
+
+Các Debit Note có thể khác Customer, Currency hoặc Billing Company vì mỗi Invoice được kiểm tra độc lập.
+
+Không tự tách một Debit Note thành nhiều Invoice theo dòng phí hoặc thuế suất.
+
+11. Dòng phí và thuế
+
+Người dùng chọn Debit Note, không chọn bỏ riêng từng dòng phí.
+
+Invoice lấy toàn bộ các dòng phí thuộc phạm vi xuất hóa đơn của Debit Note.
+
+Các dòng chi hộ hoặc khoản không thuộc phạm vi xuất hóa đơn được xử lý riêng và hiển thị rõ trên preview.
+
+Không mặc định tổng Invoice luôn bằng tổng Debit Note nếu Debit Note có khoản không đưa vào Invoice.
+
+Giữ nguyên thông tin thuế của các dòng phí khi tạo Invoice.
+
+Chưa triển khai chức năng tự chia Invoice theo thuế suất.
+
+Nếu dữ liệu thuế không phù hợp với cấu hình xuất một Invoice, báo rõ để xử lý trước khi tạo. Không âm thầm chia Debit Note.
+
+12. Preview trước khi tạo Invoice
+
+Preview hiển thị:
+
+Cách xuất đã chọn.
+Số Invoice sẽ tạo.
+Các Debit Note thuộc từng Invoice.
+Billing Company.
+Thông tin người mua.
+Currency và tỷ giá áp dụng.
+Các dòng phí.
+Tiền trước thuế.
+Tiền thuế.
+Tổng tiền.
+Các khoản không đưa vào Invoice và lý do, nếu có.
+Các lỗi hoặc cảnh báo cần xử lý.
+
+13. Tạo Invoice nháp và khóa Debit Note
+
+Khi xác nhận tạo Invoice nháp:
+
+Tạo Invoice có status = DRAFT.
+Lưu liên kết tới các Debit Note nguồn.
+Chuyển các Debit Note từ APPROVED sang INVOICING.
+Khóa chỉnh sửa Debit Note.
+Không cho chọn các Debit Note đó để tạo Invoice khác.
+
+Với Invoice gộp, tất cả Debit Note liên quan cùng chuyển sang INVOICING.
+
+Invoice lưu snapshot thông tin người mua, dòng phí, tỷ giá và số tiền tại thời điểm tạo.
+
+Snapshot không tự thay đổi theo dữ liệu nguồn về sau.
+
+Việc tạo Invoice, lưu liên kết và chuyển trạng thái Debit Note phải trong cùng transaction.
+
+Cần kiểm soát đồng thời và ràng buộc database chống hai Invoice cùng giữ quyền xuất một Debit Note.
+
+Nếu hai người cùng tạo Invoice từ một Debit Note, chỉ một thao tác được thành công.
+
+14. Trạng thái Invoice
+
+Invoice có status riêng cho vòng đời của chính Invoice.
+
+Đây không phải trường trạng thái bổ sung trên Commercial Document.
+
+Các giá trị hiện có:
+
+DRAFT: Invoice nháp trong FMS.
+SENDING: Đã gửi MISA, đang chờ xử lý hoặc phát hành.
+ISSUED: Đã phát hành.
+REJECTED: Bị từ chối, cần xử lý.
+CANCELLED: Đã hủy.
+
+Khi Invoice ở DRAFT, SENDING hoặc REJECTED và chưa được bỏ/thu hồi thành công, Debit Note vẫn INVOICING.
+
+Khi Invoice phát hành thành công, Debit Note chuyển sang INVOICED.
+
+15. Gửi Invoice sang MISA
+
+Người dùng kiểm tra Invoice nháp và gửi sang MISA.
+
+FMS tạo mã UUID, lưu vào providerRefId và gửi cùng mã đó sang MISA dưới tên RefID.
+
+Ví dụ:
+
+FMS Invoice.providerRefId = AAA.
+MISA Invoice.RefID = AAA.
+
+providerRefId là mã liên kết Invoice FMS với hóa đơn MISA.
+
+Mã này khác ID nội bộ FMS và khác số hóa đơn chính thức.
+
+Mỗi Invoice có một providerRefId riêng.
+
+Nếu gửi thất bại hoặc timeout, giữ mã đó để đối soát và retry.
+
+Không tạo RefID mới chỉ vì request trước bị timeout.
+
+Sau khi gửi thành công:
+
+Invoice chuyển sang SENDING.
+Debit Note vẫn INVOICING.
+
+Kế toán kiểm tra và ký phát hành trên MISA.
+
+16. Đồng bộ kết quả phát hành
+
+Scheduler dùng providerRefId để đọc hóa đơn tương ứng trên MISA.
+
+Khi phát hành thành công:
+
+Invoice chuyển sang ISSUED.
+Lưu số hóa đơn, ký hiệu, ngày phát hành và các mã liên quan.
+Các Debit Note chuyển sang INVOICED.
+
+Khi bị từ chối:
+
+Invoice chuyển sang REJECTED.
+Debit Note vẫn INVOICING.
+Không tự giải phóng Debit Note khi Invoice còn được xử lý hoặc retry.
+
+Khi gửi lỗi hoặc timeout:
+
+Kiểm tra MISA theo RefID trước khi gửi lại.
+Giữ Debit Note ở INVOICING đến khi xác định được kết quả hoặc bỏ/thu hồi nháp thành công.
+
+17. Thay đổi nội dung Invoice trên MISA
+
+Invoice trong FMS đồng bộ theo dữ liệu MISA.
+
+Debit Note không đồng bộ ngược theo Invoice.
+
+Nếu kế toán sửa bản nháp trên MISA:
+
+Cập nhật Invoice tương ứng trong FMS khi đồng bộ.
+Giữ dữ liệu ban đầu đã tạo/gửi.
+Lưu lịch sử khác biệt trước và sau đồng bộ.
+Không sửa nội dung, dòng phí, số tiền hoặc thông tin của Debit Note.
+Hiển thị chênh lệch giữa Invoice và dữ liệu nguồn từ Debit Note.
+
+Các thay đổi cần theo dõi:
+
+Thông tin người mua.
+Currency và tỷ giá.
+Dòng phí thêm, xóa hoặc thay đổi.
+Mô tả.
+Số lượng.
+Đơn giá.
+Thuế suất.
+Tiền trước thuế.
+Tiền thuế.
+Tổng tiền.
+
+Nếu Customer hoặc Currency trên MISA khác dữ liệu nguồn, giữ liên kết Debit Note để truy vết và cảnh báo đối soát.
+
+Không tự chuyển Invoice sang Debit Note khác dựa trên dữ liệu đã sửa.
+
+18. Lịch sử thay đổi Invoice
+
+Lưu các khác biệt FMS phát hiện giữa các lần đồng bộ.
+
+Mỗi lần thay đổi lưu:
+
+Invoice liên quan.
+Nguồn dữ liệu.
+Thời điểm FMS phát hiện.
+Thời điểm thay đổi trên MISA nếu API cung cấp.
+Trường hoặc dòng phí thay đổi.
+Giá trị trước.
+Giá trị sau.
+Chênh lệch tiền trước thuế, thuế và tổng tiền.
+Người thay đổi nếu API cung cấp.
+
+Nếu dữ liệu không thay đổi, không tạo thêm bản ghi lịch sử giống nhau.
+
+Scheduler ghi nhận khác biệt giữa các lần đọc. Không bảo đảm ghi được mọi thao tác trung gian hoặc người sửa nếu MISA không cung cấp lịch sử đó.
+
+19. Nội dung hóa đơn đã phát hành
+
+Không dùng Invoice điều chỉnh/thay thế để ghi đè nội dung hóa đơn gốc.
+
+Nếu hóa đơn phát hành khác dữ liệu FMS đã gửi, lưu dữ liệu phát hành từ MISA và lịch sử chênh lệch.
+
+Nếu các lần đồng bộ sau phát hiện nội dung cùng một hóa đơn đã phát hành thay đổi, lưu phiên bản và đưa vào đối soát, không làm mất dữ liệu trước đó.
+
+Điều chỉnh/thay thế được xử lý bằng Invoice mới có reference tới hóa đơn trước.
+
+20. Thu hồi hoặc bỏ Invoice nháp
+
+Chỉ áp dụng khi Invoice chưa phát hành.
+
+Nếu nháp chỉ tồn tại trong FMS, có thể bỏ nháp theo quyền được cấp.
+
+Nếu nháp đã gửi MISA, phải xác nhận bản nháp trên MISA đã được thu hồi hoặc xử lý phù hợp trước khi giải phóng Debit Note.
+
+Sau khi thành công:
+
+Giải phóng quyền giữ chỗ.
+Các Debit Note chuyển từ INVOICING về APPROVED.
+Các Debit Note có thể được chọn để tạo Invoice mới.
+Lưu lịch sử thao tác.
+
+Với Invoice gộp, tất cả Debit Note liên quan được giải phóng cùng nhau.
+
+Quay về APPROVED không tự mở quyền sửa mọi nội dung. Quyền chỉnh sửa theo quy tắc của chứng từ đã duyệt.
+
+Nếu chưa xác nhận được kết quả thu hồi, giữ INVOICING và đưa vào đối soát.
+
+Invoice đã phát hành không được xử lý theo luồng bỏ nháp.
+
+21. Hóa đơn điều chỉnh
+
+Điều chỉnh được thực hiện trên MISA theo luồng tích hợp hiện tại.
+
+FMS tạo Invoice mới cho hóa đơn điều chỉnh, không ghi đè hóa đơn gốc.
+
+Ví dụ:
+
+INV001: ORIGINAL.
+INV002: ADJUSTMENT, reference tới INV001.
+
+Hóa đơn điều chỉnh có RefID riêng.
+
+Ví dụ:
+
+INV001:
+RefID = AAA.
+
+INV002:
+RefID = BBB.
+OrgRefID = AAA.
+
+Debit Note vẫn INVOICED sau điều chỉnh.
+
+Nội dung Debit Note không thay đổi theo hóa đơn điều chỉnh.
+
+Hệ thống hỗ trợ nhiều lần điều chỉnh và truy vết đầy đủ chuỗi hóa đơn.
+
+Phân biệt hóa đơn trực tiếp được điều chỉnh và hóa đơn gốc đầu chuỗi khi cần.
+
+22. Scheduler nhận diện hóa đơn điều chỉnh/thay thế
+
+Scheduler thực hiện:
+
+Đọc kết quả các Invoice FMS đã gửi MISA.
+Quét hóa đơn điều chỉnh/thay thế mới trên MISA.
+
+Với mỗi hóa đơn điều chỉnh/thay thế:
+
+Kiểm tra RefID của hóa đơn mới đã tồn tại trong FMS chưa.
+Nếu đã tồn tại, không tạo trùng.
+Nếu chưa tồn tại, đọc reference tới hóa đơn được sửa.
+Tìm Invoice tương ứng trong FMS.
+Tạo bản ghi Invoice mới.
+Lưu loại hóa đơn, reference, lý do, ngày và nội dung.
+Giữ liên kết lịch sử với các Debit Note liên quan.
+
+Ưu tiên nhận diện bằng RefID/OrgRefID trong phạm vi Billing Company và tài khoản MISA phù hợp.
+
+Các phương án dự phòng như mã tra cứu hoặc ký hiệu + số hóa đơn phải được kiểm tra để tránh ghép nhầm.
+
+Nếu không tìm được hoặc có nhiều kết quả phù hợp, đưa vào danh sách chờ đối soát.
+
+Không tự chọn kết quả đầu tiên.
+
+Không tự ghép hóa đơn với Debit Note chỉ dựa vào Customer, số tiền hoặc House Bill.
+
+Hóa đơn gốc tạo trực tiếp trên MISA và chưa liên kết với FMS cần quy trình nhập/liên kết có kiểm soát.
+
+23. Lịch quét Scheduler
+
+Code hiện tại có lịch mặc định:
+
+Mỗi 10 phút đồng bộ kết quả và quét điều chỉnh/thay thế trong 3 ngày gần nhất.
+Mỗi tuần quét bù 30 ngày.
+
+Lịch có thể cấu hình.
+
+Thiết kế refactor nên lưu mốc quét thành công, quét bù từ mốc đó và quét chồng một khoảng thời gian ngắn.
+
+RefID dùng để chống nhập trùng.
+
+Nếu một khoảng quét thất bại, không đánh dấu khoảng đó đã hoàn thành.
+
+24. Hóa đơn thay thế
+
+Tạo Invoice mới có loại REPLACEMENT.
+
+Reference tới hóa đơn được thay thế.
+
+Giữ cả hóa đơn cũ và mới trong lịch sử.
+
+Chuyển quyền xuất hiện tại của Debit Note sang hóa đơn thay thế.
+
+Debit Note vẫn INVOICED.
+
+Không thay đổi nội dung Debit Note theo hóa đơn thay thế.
+
+Không cho xuất thêm Invoice gốc khác từ Debit Note đó.
+
+25. Hủy Invoice và hủy Commercial Document
+
+Hủy Invoice và hủy Commercial Document là hai nghiệp vụ khác nhau.
+
+Hủy Invoice không tự chuyển Commercial Document sang VOIDED.
+
+Sau khi xác nhận Invoice đã hủy, chỉ giải phóng Debit Note nếu quy trình cho phép xuất lại và không còn Invoice hiệu lực khác giữ quyền xuất.
+
+Nếu được giải phóng để xuất lại, Debit Note chuyển về APPROVED và lưu lịch sử.
+
+Hủy Commercial Document thì chuyển sang VOIDED sau khi vượt qua các kiểm tra thanh toán, Invoice và các ràng buộc liên quan.
+
+Không coi hủy hóa đơn đã phát hành giống bỏ Invoice nháp.
+
+26. Hiển thị Invoice
+
+Danh sách và chi tiết Invoice hiển thị:
+
+Loại: ORIGINAL, ADJUSTMENT hoặc REPLACEMENT.
+Trạng thái phát hành.
+Các Debit Note nguồn.
+Hóa đơn được điều chỉnh/thay thế.
+Danh sách hóa đơn điều chỉnh/thay thế liên quan.
+Lý do và ngày phát sinh.
+Thông báo liên quan nếu có.
+Nội dung hiện tại từ MISA.
+Lịch sử thay đổi.
+Chênh lệch với dữ liệu nguồn từ Debit Note.
+Trạng thái đối soát nếu có.
+
+Ví dụ:
+
+INV001 \| Original \| Issued \| Adjusted By: INV002.
+INV002 \| Adjustment \| Issued \| Original: INV001.
+
+Người dùng có thể click theo hai chiều.
+
+Trạng thái phát hành và thông tin điều chỉnh được phân biệt để không mất thông tin hóa đơn gốc đã phát hành.
+
+27. Thông báo điều chỉnh
+
+Thông báo điều chỉnh không phải Invoice.
+
+Lưu thành chứng từ hoặc entity riêng, gồm mã nhà cung cấp, ngày, nội dung hoặc tệp và các Invoice liên quan.
+
+Liên kết với hóa đơn gốc và hóa đơn điều chỉnh khi cần.
+
+Chỉ tự động đồng bộ sau khi xác minh API MISA cung cấp dữ liệu này.
+
+28. Công nợ và đối soát
+
+Công nợ tính theo Commercial Document đã duyệt và các khoản phân bổ thanh toán.
+
+APPROVED, INVOICING và INVOICED đều thuộc tập chứng từ đã duyệt khi tính công nợ.
+
+Tạo Invoice không ghi thêm khoản phải thu lần thứ hai.
+
+Thay đổi Invoice trên MISA không tự thay đổi công nợ hoặc nội dung Debit Note.
+
+Nếu số tiền Invoice khác phần được xuất hóa đơn từ Debit Note, hiển thị chênh lệch để kế toán đối soát.
+
+Khi cần thay đổi công nợ, xử lý bằng chứng từ tài chính phù hợp và lưu lịch sử riêng.
+
+Không coi việc đồng bộ Invoice điều chỉnh là đã tự cập nhật công nợ.
+
+29. Mô hình dữ liệu
+
+Commercial Document dùng một status:
+
+PENDING, REJECTED, APPROVED, INVOICING, INVOICED, VOIDED.
+
+Không thêm invoiceStatus.
+
+Invoice có status riêng và các dữ liệu:
+
+Loại hóa đơn.
+Reference tới hóa đơn được sửa.
+Lý do điều chỉnh.
+providerRefId.
+Số hóa đơn, ký hiệu và ngày phát hành.
+Dữ liệu ban đầu từ Debit Note.
+Dữ liệu đã gửi MISA.
+Dữ liệu hiện tại từ MISA.
+Liên kết tới các Debit Note.
+Lịch sử thay đổi và chênh lệch.
+
+Bổ sung hoặc hoàn thiện:
+
+Liên kết hiện tại và lịch sử Invoice–Debit Note.
+Ràng buộc chống xuất trùng.
+Quan hệ Invoice hai chiều và chuỗi điều chỉnh.
+Adjustment Notice.
+Mốc đồng bộ.
+Danh sách chờ đối soát.
+Lịch sử chuyển trạng thái Commercial Document.
+
+Không ghi đè liên kết Invoice cũ mà làm mất lịch sử khi thay thế hoặc hủy.
+
+30. House Bill
+
+House Bill là bộ lọc hỗ trợ trên màn hình Chứng từ công nợ.
+
+Invoice truy về House Bill thông qua các Debit Note nguồn.
+
+Scheduler không cần đoán House Bill từ nội dung hóa đơn.
+
+Nếu bổ sung reference tới House Bill/HAWB, vẫn giữ số bill snapshot.
+
+Không ép mọi Commercial Document phải thuộc một House Bill trước khi rà soát direct shipment, chưa có House Bill hoặc chứng từ nhiều Job.
+
+31. Dữ liệu cũ
+
+Giữ lịch sử Debit Note đã xuất theo từng dòng phí hoặc đã chia vào nhiều Invoice.
+
+Không tự xóa, gộp hoặc đổi liên kết để ép vào rule mới.
+
+Rule một Debit Note không chia nhiều Invoice áp dụng cho luồng tạo mới sau refactor.
+
+Khi chuyển đổi dữ liệu, xác định status từ các Invoice hiện có.
+
+Các trường hợp đã xuất một phần hoặc có nhiều Invoice với trạng thái khác nhau phải đối soát riêng.
+
+Không tự gán APPROVED rồi cho xuất lại toàn bộ Debit Note.
+
+32. Phạm vi triển khai hiện tại
+
+Bổ sung INVOICING và INVOICED vào status Commercial Document.
+
+Không thêm invoiceStatus.
+
+Rà soát các truy vấn đang chỉ nhận APPROVED để tính cả INVOICING và INVOICED khi phù hợp.
+
+Bổ sung chọn Debit Note và lựa chọn Xuất gộp/Xuất riêng tại Chứng từ công nợ.
+
+Bổ sung preview trước khi tạo.
+
+Không cho chọn bỏ từng dòng phí.
+
+Không triển khai tự tách Invoice theo thuế suất trong đợt này.
+
+Chống xuất trùng ở cấp Debit Note.
+
+Khóa chỉnh sửa khi INVOICING hoặc INVOICED.
+
+Thu hồi/bỏ nháp thành công thì về APPROVED.
+
+Đồng bộ dữ liệu Invoice từ MISA và lưu lịch sử thay đổi.
+
+Không đồng bộ ngược nội dung Invoice vào Debit Note.
+
+Hiển thị chênh lệch để đối soát.
+
+Hoàn thiện lịch sử điều chỉnh/thay thế.
+
+Hoàn thiện scheduler và quét bù.
+
+Kiểm chứng tạo đồng thời, retry, thu hồi nháp, phát hành, sửa trên MISA, hủy, thay thế và điều chỉnh nhiều lần.
+
+Nghiệp vụ tạo nhiều Invoice theo nhiều loại thuế sẽ được thiết kế riêng sau, bao gồm việc xem lại quan hệ Invoice–Debit Note, chống trùng theo dòng phí và cách xác định trạng thái chứng từ.
