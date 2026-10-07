@@ -1,13 +1,96 @@
 services:
+  # ============================================================
+  # KAFKA — nhận và lưu message từ producer, phục vụ consumer
+  # ============================================================
   kafka:
     image: apache/kafka:4.3.1
     ports:
+      # Cổng trên máy Windows : cổng bên trong container Kafka.
+      # Spring Boot chạy trên Windows kết nối localhost:9092.
       - "9092:9092"
     environment:
+      # --------------------------------------------------------
+      # 1. DANH TÍNH VÀ VAI TRÒ CỦA SERVER
+      # --------------------------------------------------------
+      # ID duy nhất của server trong cluster.
+      KAFKA_NODE_ID: 1
+      # broker: lưu/phục vụ message; controller: quản lý cluster.
+      # Máy học local dùng một server đảm nhiệm cả hai vai trò.
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      # --------------------------------------------------------
+      # 2. TẠO LISTENER — ĐẶT TÊN VÀ MỞ CỔNG
+      # --------------------------------------------------------
+      # Cú pháp: TÊN_LISTENER://ĐỊA_CHỈ:CỔNG.
+      # Bỏ trống địa chỉ = lắng nghe trên mọi interface trong container.
+      # INTERNAL :9094 — broker và service trong mạng Docker.
+      # EXTERNAL :9092 — ứng dụng trên Windows, qua cổng Docker đã publish.
+      # CONTROLLER :9093 — quản lý KRaft nội bộ.
+      # Các bước sau dùng lại chính xác ba tên này.
+      KAFKA_LISTENERS: INTERNAL://:9094,EXTERNAL://:9092,CONTROLLER://:9093
+
+      # --------------------------------------------------------
+      # 3. GÁN GIAO THỨC CHO CÁC LISTENER VỪA TẠO
+      # --------------------------------------------------------
+      # Cú pháp: TÊN_LISTENER:GIAO_THỨC.
+      # Cả ba listener dùng PLAINTEXT = truyền dữ liệu không mã hóa TLS.
+      # INTERNAL, EXTERNAL, CONTROLLER là tên; PLAINTEXT là giao thức.
+      # Bước hiện tại học tách đường kết nối; TLS/xác thực sẽ cấu hình sau.
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      # --------------------------------------------------------
+      # 4. CHỌN LISTENER CHO TỪNG VAI TRÒ
+      # --------------------------------------------------------
+      # Chọn tên CONTROLLER đã tạo ở bước 2 -> cổng 9093.
+      # Controller nhận kết nối quản lý cluster qua cửa này.
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Chọn tên INTERNAL đã tạo ở bước 2 -> cổng 9094.
+      # Các broker trao đổi với nhau qua cửa này.
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      # --------------------------------------------------------
+      # 5. KHAI BÁO ĐỊA CHỈ CONTROLLER TRONG CLUSTER
+      # --------------------------------------------------------
+      # Danh sách controller: NODE_ID@HOST:CỔNG.
+      # ID 1 từ bước 1; cổng 9093 của listener đã chọn ở bước 4.
+      # kafka là tên service Docker, trỏ tới container Kafka trong mạng Compose.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      # --------------------------------------------------------
+      # 6. CÔNG BỐ ĐỊA CHỈ BROKER CHO PRODUCER / CONSUMER
+      # --------------------------------------------------------
+      # Dùng tên INTERNAL và EXTERNAL đã tạo ở bước 2.
+      # Kafka trả địa chỉ này cho ứng dụng sau kết nối bootstrap đầu tiên.
+      # Kết nối qua INTERNAL nhận kafka:9094, dùng từ mạng Docker Compose.
+      # Kết nối qua EXTERNAL nhận localhost:9092, dùng từ máy Windows.
+      # localhost ở đây được hiểu từ phía Spring Boot chạy trên Windows.
+      # Windows :9092 -> Docker ports "9092:9092" -> Kafka :9092.
+      # Nếu đổi ports thành "19092:9092", đổi địa chỉ này thành localhost:19092
+      # và spring.kafka.bootstrap-servers thành localhost:19092.
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9094,EXTERNAL://localhost:9092
+
+      # --------------------------------------------------------
+      # 7. TOPIC NỘI BỘ — CẤU HÌNH CHO MỘT BROKER LOCAL
+      # --------------------------------------------------------
+      # Topic lưu offset của consumer group chỉ có một bản sao.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # Topic lưu trạng thái transaction cũng chỉ có một bản sao.
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      # Cần ít nhất một replica đồng bộ để ghi trạng thái transaction.
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # --------------------------------------------------------
+      # 8. LƯU DỮ LIỆU
+      # --------------------------------------------------------
+      # Thư mục lưu dữ liệu message và metadata, không chỉ log console.
       KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
     volumes:
+      # Volume giữ dữ liệu khi container được tạo lại.
       - kafka-data:/tmp/kraft-combined-logs
 
+  # ============================================================
+  # OPENSEARCH — lưu và tìm kiếm dữ liệu; API tại localhost:9200
+  # ============================================================
   opensearch:
     image: opensearchproject/opensearch:3.9.0
     environment:
@@ -24,6 +107,9 @@ services:
         soft: 65536
         hard: 65536
 
+  # ============================================================
+  # DASHBOARDS — giao diện xem OpenSearch tại localhost:5601
+  # ============================================================
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:3.9.0
     environment:
@@ -34,6 +120,9 @@ services:
     depends_on:
       - opensearch
 
+# ============================================================
+# VOLUME — nơi Docker giữ dữ liệu của các dịch vụ
+# ============================================================
 volumes:
   kafka-data:
   opensearch-data:
